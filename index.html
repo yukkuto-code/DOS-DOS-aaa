@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="ja">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <!--
+    CSP はブラウザ側の最後の砦。
+    default-src 'none' で外部読み込みは全禁止。外部依存はゼロ。
+    connect-src は対象を指定できるようにするため http/https を許可している。
+    注: frame-ancestors は <meta> では無視されるため app.js の FRAMED チェックで代替。
+  -->
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' http: https:; base-uri 'none'; form-action 'none'">
+  <title>負荷テスト・サンドボックス</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+
+<body>
+  <a class="skip" href="#main" data-i18n="skip">本文へ</a>
+
+  <header class="hero">
+    <div class="wrap">
+      <div class="langs" role="group" aria-label="Language">
+        <button type="button" class="lang is-active" data-lang="ja" lang="ja">日本語</button>
+        <button type="button" class="lang" data-lang="en" lang="en">English</button>
+        <button type="button" class="lang" data-lang="zh" lang="zh-CN">简体中文</button>
+      </div>
+      <h1 data-i18n="title">負荷テスト・サンドボックス</h1>
+      <p class="lede" data-i18n="lede">
+        URL を指定して計測できます。送信レートは 1 秒あたり 2 回まで、同時接続は 1 本に固定されています。
+      </p>
+    </div>
+  </header>
+
+  <main id="main" class="wrap">
+
+    <section class="notice" role="note">
+      <h2 data-i18n="noticeTitle">これは計測ツールで、攻撃ツールではありません</h2>
+      <p data-i18n="noticeBody">
+        速度の上限はコード内の定数で固定されており、画面から引き上げることはできません。最大でも毎秒 2 回・1 回 100 回までなので、
+        相手に過大な負荷をかける用途には使えません。自分が管理するか、管理者の許可を得たサーバーだけを対象にしてください。
+      </p>
+    </section>
+
+    <section class="card">
+      <h2 data-i18n="modeTitle">モード</h2>
+      <div class="modes">
+        <label class="mode">
+          <input type="radio" name="mode" value="simulate" checked>
+          <span class="mode-body">
+            <span class="mode-name" data-i18n="modeSimName">シミュレーション（既定）</span>
+            <span class="mode-desc" data-i18n="modeSimDesc">ネットワーク送信は 0 件。合成データで遅延分布とエラー率の見方を練習できます。</span>
+          </span>
+        </label>
+        <label class="mode">
+          <input type="radio" name="mode" value="probe">
+          <span class="mode-body">
+            <span class="mode-name" data-i18n="modeProbeName">セルフ計測</span>
+            <span class="mode-desc" data-i18n="modeProbeDesc">指定した対象へ、間隔をあけて実際にリクエストを送ります。</span>
+          </span>
+        </label>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2 data-i18n="targetCardTitle">測定対象</h2>
+
+      <div class="target-row">
+        <span class="badge" id="targetBadge" data-i18n="badgeBundled">同梱</span>
+        <code id="targetView">-</code>
+      </div>
+
+      <div class="field">
+        <label for="targetUrl" data-i18n="targetUrlLabel">対象 URL</label>
+        <div class="field-row">
+          <input type="text" id="targetUrl" placeholder="http://127.0.0.1:8000/" autocomplete="off"
+            spellcheck="false">
+          <button type="button" class="btn" id="applyTargetBtn" data-i18n="applyTargetBtn">この URL を使う</button>
+        </div>
+        <p class="hint" data-i18n="targetHint">
+          未指定ならこのページに同梱した静的ファイルを測ります。http:// と https:// のみ対応します。
+        </p>
+        <p class="warn" id="targetMsg" hidden></p>
+      </div>
+
+      <div class="controls">
+        <button type="button" class="btn ghost" id="resetTargetBtn" data-i18n="resetTargetBtn" hidden>既定に戻す</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2 data-i18n="conditionsTitle">計測条件</h2>
+      <dl class="kv">
+        <dt data-i18n="limitLabel">ハードリミット</dt>
+        <dd id="limitView">-</dd>
+      </dl>
+
+      <div class="field">
+        <label for="intervalRange" data-i18n="intervalLabel">送信間隔</label>
+        <div class="field-row">
+          <input type="range" id="intervalRange" min="500" max="5000" step="100" value="1000">
+          <output id="intervalView">1000 ms</output>
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="budgetNumber" data-i18n="budgetLabel">総リクエスト数</label>
+        <div class="field-row">
+          <input type="number" id="budgetNumber" min="1" max="100" value="20" inputmode="numeric">
+          <span class="hint" data-i18n="budgetHint">上限 100 回（コードで固定）</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="card" id="probePanel" hidden>
+      <h2 data-i18n="gateTitle">セルフ計測の前提</h2>
+      <label class="check">
+        <input type="checkbox" id="ownCheckbox">
+        <span data-i18n="ownCheck">この対象の管理者であり、計測の許可を得ています。</span>
+      </label>
+
+      <div class="field">
+        <label for="confirmText" data-i18n="confirmLabel">確認のため TEST と入力</label>
+        <input type="text" id="confirmText" autocomplete="off" spellcheck="false" placeholder="TEST">
+      </div>
+
+      <p class="warn" id="gateWarn" hidden data-i18n="gateWarn">実行条件がそろっていません。</p>
+    </section>
+
+    <section class="card">
+      <div class="controls">
+        <button type="button" class="btn primary" id="startBtn" data-i18n="startBtn">開始</button>
+        <button type="button" class="btn" id="stopBtn" disabled data-i18n="stopBtn">停止</button>
+        <button type="button" class="btn ghost" id="resetBtn" data-i18n="resetBtn">リセット</button>
+      </div>
+      <p class="state" id="stateLine" aria-live="polite" data-i18n="stateIdle">待機中</p>
+
+      <div class="stats" aria-live="polite">
+        <div class="stat"><span class="stat-v" id="statSent">0</span><span class="stat-k" data-i18n="statSent">送信</span></div>
+        <div class="stat"><span class="stat-v" id="statOk">0</span><span class="stat-k" data-i18n="statOk">成功</span></div>
+        <div class="stat"><span class="stat-v" id="statErr">0</span><span class="stat-k" data-i18n="statErr">失敗</span></div>
+        <div class="stat"><span class="stat-v" id="statP50">–</span><span class="stat-k" data-i18n="statP50">p50 遅延</span></div>
+        <div class="stat"><span class="stat-v" id="statP95">–</span><span class="stat-k" data-i18n="statP95">p95 遅延</span></div>
+        <div class="stat"><span class="stat-v" id="statElapsed">0.0 s</span><span class="stat-k" data-i18n="statElapsed">経過</span></div>
+      </div>
+
+      <figure class="chart">
+        <figcaption data-i18n="chartTitle">遅延の分布</figcaption>
+        <canvas id="chart" width="640" height="200" role="img" aria-label="latency histogram"></canvas>
+      </figure>
+
+      <div class="logwrap">
+        <h3 data-i18n="logTitle">実行ログ</h3>
+        <ol class="log" id="log" aria-live="polite"></ol>
+      </div>
+
+      <div class="controls">
+        <button type="button" class="btn ghost" id="reportBtn" data-i18n="reportBtn">レポートを保存</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2 data-i18n="diffTitle">元のコードから何を変えたか</h2>
+      <table class="diff">
+        <thead>
+          <tr>
+            <th data-i18n="diffColOld">元の実装</th>
+            <th data-i18n="diffColNew">この実装</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td data-i18n="diff1a">任意の URL を入力して送信できた</td>
+            <td data-i18n="diff1b">同じく任意の URL を指定できる（そのまま）</td>
+          </tr>
+          <tr>
+            <td data-i18n="diff2a">毎秒 1〜100000 件、同時 200 件を並列送信</td>
+            <td data-i18n="diff2b">最短 500 ms 間隔（毎秒 2 回まで）・同時 1 件・1 回 100 回まで</td>
+          </tr>
+          <tr>
+            <td data-i18n="diff3a">停止しない限り送信し続けた</td>
+            <td data-i18n="diff3b">件数・3 分・毎分 120 回・同一ホスト 200 回で自動終了</td>
+          </tr>
+          <tr>
+            <td data-i18n="diff4a">no-cors で応答を読まずに投げ続けた</td>
+            <td data-i18n="diff4b">応答を必ず読み、3 回連続で失敗したら停止</td>
+          </tr>
+          <tr>
+            <td data-i18n="diff5a">CDN のスクリプトとインライン onclick</td>
+            <td data-i18n="diff5b">外部依存ゼロ・CSP・DOM は textContent のみ</td>
+          </tr>
+          <tr>
+            <td data-i18n="diff6a">入力検証がなかった</td>
+            <td data-i18n="diff6b">http/https のみ許可し、認証情報入り URL は拒否</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="card">
+      <h2 data-i18n="whyTitle">安全性はどこで担保しているか</h2>
+      <ul class="why">
+        <li data-i18n="why1">上限は凍結した定数。画面から引き上げる手段がありません（最大毎秒 2 回）。</li>
+        <li data-i18n="why2">同時接続は常に 1 本。回線やブラウザを飽和させません。</li>
+        <li data-i18n="why3">応答を必ず読み、失敗が続けば自動で止まります（盲撃ちをしない）。</li>
+        <li data-i18n="why4">タブが非表示になると停止し、通信と計測を打ち切ります。</li>
+        <li data-i18n="why5">既定はシミュレーションで、クリックしても 1 バイトも送信しません。</li>
+      </ul>
+    </section>
+  </main>
+
+  <footer class="foot wrap">
+    <p data-i18n="footer">自分が管理するか、管理者の許可を得たサーバーだけを対象にしてください。第三者への負荷送信は不正アクセス禁止法や各国法令に触れます。</p>
+  </footer>
+
+  <script src="./app.js"></script>
+</body>
+
+</html>
