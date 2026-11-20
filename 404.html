@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="ja">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta name="robots" content="noindex, nofollow">
+  <title>ページが見つかりません（404）</title>
+
+  <!--
+    このファイルは GitHub Pages の「404 エラードキュメント」です。
+    実ファイルが存在しないパス（拡張子なしの /foo、別拡張子の /index、
+    存在しないディレクトリなど）へのアクセスに対し、サーバーは
+    ステータス 404 のままこの HTML を返します。その後の遷移はこのページが行います。
+
+    方針:
+      1. ステータスコードは 404 のまま返す（200 に化けさせない）
+      2. 表示後すぐに元のホームページ index.html へ replace 遷移する
+      3. 遷移先も存在しない場合の無限ループは 3 秒のクールダウンで打ち切る
+      4. JS が無効でも <noscript> の meta refresh で戻す
+
+    スクリプトをインラインにしている理由:
+      このページは「存在しない URL」で配信されるため、相対パス（./404.js）は
+      要求されたパスを基準に解決されてしまい 404 になる。よって外部ファイル化できない。
+      外部リソースもユーザー入力の描画も無いので、インラインでも危険は増えない。
+  -->
+
+  <style>
+    :root {
+      --blue: #00427a;
+      --yellow: #ffd600;
+      --ink: #14202b;
+      --muted: #5b6b7a;
+      --line: #dfe5ec;
+      --bg: #f6f7f9;
+      --bad: #b3261e;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: system-ui, -apple-system, "Segoe UI", "Hiragino Sans", "Noto Sans JP", "Microsoft YaHei", sans-serif;
+      line-height: 1.7;
+    }
+
+    .card {
+      width: min(560px, 100%);
+      background: #fff;
+      border: 1px solid var(--line);
+      border-top: 6px solid var(--yellow);
+      border-radius: 14px;
+      padding: 28px 26px;
+      box-shadow: 0 10px 30px rgba(20, 32, 43, .08);
+    }
+
+    .code {
+      margin: 0;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: .12em;
+      color: var(--blue);
+    }
+
+    h1 {
+      margin: 6px 0 10px;
+      font-size: 22px;
+      line-height: 1.4;
+    }
+
+    p {
+      margin: 0 0 14px;
+      color: var(--muted);
+    }
+
+    .path {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 13px;
+      background: #f1f4f8;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 8px 10px;
+      word-break: break-all;
+      color: var(--ink);
+    }
+
+    a.button {
+      display: inline-block;
+      margin-top: 6px;
+      padding: 10px 18px;
+      border-radius: 10px;
+      background: var(--blue);
+      color: #fff;
+      font-weight: 700;
+      text-decoration: none;
+    }
+
+    a.button:hover {
+      background: #00548f;
+    }
+
+    a.button:focus-visible {
+      outline: 3px solid var(--yellow);
+      outline-offset: 2px;
+    }
+
+    .stopped {
+      display: none;
+      margin: 12px 0 0;
+      padding: 10px 12px;
+      border-left: 4px solid var(--bad);
+      background: #fdeeee;
+      color: var(--bad);
+      font-size: 14px;
+    }
+
+    body.is-stopped .stopped {
+      display: block;
+    }
+
+    body.is-stopped .auto {
+      display: none;
+    }
+  </style>
+
+  <noscript>
+    <meta http-equiv="refresh" content="0; url=/index.html">
+  </noscript>
+</head>
+
+<body>
+  <main class="card">
+    <p class="code">404 NOT FOUND</p>
+    <h1>ページが見つかりません</h1>
+
+    <p class="auto" id="auto">ホームページ（index.html）へ戻ります…</p>
+
+    <p class="path" id="path"></p>
+
+    <p>
+      <a class="button" id="home" href="/index.html">ホームに戻る</a>
+    </p>
+
+    <p class="stopped" id="stopped" role="alert">
+      自動で戻れませんでした。上のボタンからホームを開いてください。
+    </p>
+  </main>
+
+  <script>
+    (function () {
+      'use strict';
+
+      var KEY = 'lt404:at';          // 連続リダイレクト検出用（タブ内のみ）
+      var COOLDOWN_MS = 3000;        // これ以内に再び 404 になったら戻らない
+      var PROBE_TIMEOUT_MS = 700;    // 遷移先の存在確認に使う上限
+
+      var pathEl = document.getElementById('path');
+      var homeEl = document.getElementById('home');
+
+      pathEl.textContent = location.pathname + location.search;
+
+      function giveUp() {
+        document.body.classList.add('is-stopped');
+      }
+
+      // ホームの候補。ドメイン直下（user site）とサブパス配信（project site）の両方に対応。
+      var segs = location.pathname.split('/').filter(Boolean);
+      var candidates = ['/index.html'];
+      if (segs.length >= 2) candidates.push('/' + segs[0] + '/index.html');
+
+      homeEl.href = candidates[0];
+
+      // index.html 自体が無い場合、または直前に戻した直後なら、これ以上遷移しない。
+      if (/\/index\.html$/i.test(location.pathname)) {
+        giveUp();
+        return;
+      }
+
+      var lastAt = 0;
+      try { lastAt = Number(sessionStorage.getItem(KEY)) || 0; } catch (e) { lastAt = 0; }
+      if (Date.now() - lastAt < COOLDOWN_MS) {
+        giveUp();
+        return;
+      }
+      try { sessionStorage.setItem(KEY, String(Date.now())); } catch (e) { /* 保存不可でも続行 */ }
+
+      function exists(url) {
+        if (!window.fetch) return Promise.resolve(null);
+        var ctrl = null;
+        try { ctrl = new AbortController(); } catch (e) { ctrl = null; }
+        var timer = setTimeout(function () { if (ctrl) ctrl.abort(); }, PROBE_TIMEOUT_MS);
+        return fetch(url, {
+          method: 'HEAD',
+          cache: 'no-store',
+          credentials: 'omit',
+          redirect: 'follow',
+          signal: ctrl ? ctrl.signal : undefined
+        }).then(function (r) {
+          return r.ok;
+        }).catch(function () {
+          return false;
+        }).then(function (ok) {
+          clearTimeout(timer);
+          return ok;
+        });
+      }
+
+      // 候補を順に確認し、最初に見つかったものを戻り先にする。
+      // 判定できなければ既定の /index.html に進む（その先が無ければ上のガードで止まる）。
+      exists(candidates[0]).then(function (ok) {
+        if (ok !== false) return candidates[0];
+        if (candidates[1]) {
+          return exists(candidates[1]).then(function (ok2) {
+            return ok2 ? candidates[1] : candidates[0];
+          });
+        }
+        return candidates[0];
+      }).then(function (home) {
+        homeEl.href = home;
+        if (home === location.pathname) {
+          giveUp();
+          return;
+        }
+        location.replace(home);
+      });
+    })();
+  </script>
+</body>
+
+</html>
